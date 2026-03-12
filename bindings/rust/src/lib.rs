@@ -2353,6 +2353,87 @@ mod fp12_test {
 }
 
 #[cfg(test)]
+mod fp12_msm_test {
+    use super::*;
+    use rand::{RngCore, SeedableRng};
+    use rand_chacha::ChaCha20Rng;
+
+    fn random_gt_elements(n: usize, rng: &mut ChaCha20Rng) -> Vec<blst_fp12> {
+        let mut elements = Vec::with_capacity(n);
+        for _ in 0..n {
+            let mut s = [0u8; 8];
+            rng.fill_bytes(&mut s);
+            let mut p1 = blst_p1::default();
+            let mut p2 = blst_p2::default();
+            unsafe {
+                blst_p1_mult(&mut p1, blst_p1_generator(), s.as_ptr(), 64);
+                blst_p2_mult(&mut p2, blst_p2_generator(), s.as_ptr(), 64);
+            }
+            let p1a = p1_affines::from(core::slice::from_ref(&p1));
+            let p2a = p2_affines::from(core::slice::from_ref(&p2));
+            elements.push(blst_fp12::miller_loop(&p2a[0], &p1a[0]).final_exp());
+        }
+        elements
+    }
+
+    // Simple square-and-multiply for single GT element (pure Rust)
+    fn gt_pow(base: &blst_fp12, scalar: &[u8], nbits: usize) -> blst_fp12 {
+        let mut result = blst_fp12::default(); // fp12_one
+        let mut found_one = false;
+
+        for i in (0..nbits).rev() {
+            if found_one {
+                unsafe { blst_fp12_sqr(&mut result, &result) };
+            }
+            let bit = (scalar[i / 8] >> (i % 8)) & 1;
+            if bit == 1 {
+                if found_one {
+                    unsafe { blst_fp12_mul(&mut result, &result, base) };
+                } else {
+                    result = *base;
+                    found_one = true;
+                }
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn gt_multi_scalar() {
+        const NBITS: usize = 64;
+        const NBYTES: usize = (NBITS + 7) / 8;
+
+        let mut rng = ChaCha20Rng::from_entropy();
+
+        for npoints in [1, 2, 3, 8, 33] {
+            let gt_elems = random_gt_elements(npoints, &mut rng);
+            let mut scalars = vec![0u8; NBYTES * npoints];
+            rng.fill_bytes(&mut scalars);
+
+            // Naive: square-and-multiply each, then multiply together
+            let mut naive = blst_fp12::default();
+            for i in 0..npoints {
+                let ri = gt_pow(
+                    &gt_elems[i],
+                    &scalars[i * NBYTES..(i + 1) * NBYTES],
+                    NBITS,
+                );
+                unsafe { blst_fp12_mul(&mut naive, &naive, &ri) };
+            }
+
+            // Via MultiPoint trait
+            let msm = gt_elems.mult(&scalars, NBITS);
+
+            assert_eq!(
+                naive, msm,
+                "GT MSM mismatch for npoints={}",
+                npoints
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod sk_test {
     use super::*;
     use rand::{RngCore, SeedableRng};

@@ -494,6 +494,95 @@ pippenger_mult_impl!(
     blst_p2_from_affine,
 );
 
+impl MultiPoint for [blst_fp12] {
+    type Output = blst_fp12;
+
+    fn mult(&self, scalars: &[u8], nbits: usize) -> blst_fp12 {
+        let npoints = self.len();
+        let nbytes = (nbits + 7) / 8;
+
+        if scalars.len() < nbytes * npoints {
+            panic!("scalars length mismatch");
+        }
+
+        let p: [*const blst_fp12; 2] = [&self[0], ptr::null()];
+        let s: [*const u8; 2] = [&scalars[0], ptr::null()];
+
+        unsafe {
+            let mut scratch: Vec<u64> = Vec::with_capacity(
+                blst_fp12s_mult_pippenger_scratch_sizeof(npoints) / 8,
+            );
+            #[allow(clippy::uninit_vec)]
+            scratch.set_len(scratch.capacity());
+            let mut ret = blst_fp12::default();
+            blst_fp12s_mult_pippenger(
+                &mut ret,
+                &p[0],
+                npoints,
+                &s[0],
+                nbits,
+                &mut scratch[0],
+            );
+            ret
+        }
+    }
+
+    fn add(&self) -> blst_fp12 {
+        let npoints = self.len();
+
+        let pool = mt::da_pool();
+        let ncpus = pool.max_count();
+        if ncpus < 2 || npoints < 384 {
+            let mut ret = blst_fp12::default();
+            for i in 0..npoints {
+                unsafe { blst_fp12_mul(&mut ret, &ret, &self[i]) };
+            }
+            return ret;
+        }
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let nchunks = (npoints + 255) / 256;
+        let chunk = npoints / nchunks + 1;
+        let n_workers = core::cmp::min(ncpus, nchunks);
+        let (tx, rx) = sync_channel(n_workers);
+        for _ in 0..n_workers {
+            let tx = tx.clone();
+            let counter = counter.clone();
+
+            pool.joined_execute(move || {
+                let mut acc = blst_fp12::default();
+                let mut chunk = chunk;
+
+                loop {
+                    let work =
+                        counter.fetch_add(chunk, Ordering::Relaxed);
+                    if work >= npoints {
+                        break;
+                    }
+                    if work + chunk > npoints {
+                        chunk = npoints - work;
+                    }
+                    for i in work..work + chunk {
+                        unsafe {
+                            blst_fp12_mul(&mut acc, &acc, &self[i]);
+                        }
+                    }
+                }
+                tx.send(acc).expect("disaster");
+            });
+        }
+
+        let mut ret = rx.recv().unwrap();
+        for _ in 1..n_workers {
+            unsafe {
+                blst_fp12_mul(&mut ret, &ret, &rx.recv().unwrap())
+            };
+        }
+
+        ret
+    }
+}
+
 fn num_bits(l: usize) -> usize {
     8 * core::mem::size_of_val(&l) - l.leading_zeros() as usize
 }

@@ -853,6 +853,31 @@ extern "C" {
     );
 }
 extern "C" {
+    pub fn blst_fp12s_mult_pippenger_scratch_sizeof(npoints: usize) -> usize;
+}
+extern "C" {
+    pub fn blst_fp12s_mult_pippenger(
+        ret: *mut blst_fp12,
+        points: *const *const blst_fp12,
+        npoints: usize,
+        scalars: *const *const byte,
+        nbits: usize,
+        scratch: *mut limb_t,
+    );
+}
+extern "C" {
+    pub fn blst_fp12s_tile_pippenger(
+        ret: *mut blst_fp12,
+        points: *const *const blst_fp12,
+        npoints: usize,
+        scalars: *const *const byte,
+        nbits: usize,
+        scratch: *mut limb_t,
+        bit0: usize,
+        window: usize,
+    );
+}
+extern "C" {
     pub fn blst_map_to_g1(out: *mut blst_p1, u: *const blst_fp, v: *const blst_fp);
 }
 extern "C" {
