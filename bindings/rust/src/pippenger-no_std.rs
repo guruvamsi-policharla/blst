@@ -177,3 +177,48 @@ pippenger_mult_impl!(
     blst_p2_affine_is_inf,
     blst_p2_affine_in_g2,
 );
+
+impl MultiPoint for [blst_fp12] {
+    type Output = blst_fp12;
+
+    fn mult(&self, scalars: &[u8], nbits: usize) -> blst_fp12 {
+        let npoints = self.len();
+        let nbytes = (nbits + 7) / 8;
+
+        if scalars.len() < nbytes * npoints {
+            panic!("scalars length mismatch");
+        }
+
+        let p: [*const blst_fp12; 2] = [&self[0], ptr::null()];
+        let s: [*const u8; 2] = [&scalars[0], ptr::null()];
+
+        let mut ret = blst_fp12::default();
+        unsafe {
+            let mut scratch: Vec<u64> = Vec::with_capacity(
+                blst_fp12s_mult_pippenger_scratch_sizeof(npoints) / 8,
+            );
+            #[allow(clippy::uninit_vec)]
+            scratch.set_len(scratch.capacity());
+            blst_fp12s_mult_pippenger(
+                &mut ret,
+                &p[0],
+                npoints,
+                &s[0],
+                nbits,
+                &mut scratch[0],
+            );
+        }
+        ret
+    }
+
+    fn add(&self) -> blst_fp12 {
+        let npoints = self.len();
+
+        let mut ret = blst_fp12::default();
+        for i in 0..npoints {
+            unsafe { blst_fp12_mul(&mut ret, &ret, &self[i]) };
+        }
+
+        ret
+    }
+}

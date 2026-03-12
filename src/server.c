@@ -18,6 +18,7 @@
 #include "recip.c"
 #include "bulk_addition.c"
 #include "multi_scalar.c"
+#include "gt_multi_scalar.c"
 #include "consts.c"
 #include "vect.c"
 #include "exports.c"

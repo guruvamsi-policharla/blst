@@ -273,6 +273,21 @@ void blst_p2s_tile_pippenger(blst_p2 *ret, const blst_p2_affine *const points[],
                              size_t bit0, size_t window);
 
 /*
+ * GT (Fp12) multi-scalar multiplication via Pippenger's algorithm.
+ * Computes ret = points[0]^scalars[0] * ... * points[n-1]^scalars[n-1]
+ */
+size_t blst_fp12s_mult_pippenger_scratch_sizeof(size_t npoints);
+void blst_fp12s_mult_pippenger(blst_fp12 *ret,
+                                const blst_fp12 *const points[],
+                                size_t npoints, const byte *const scalars[],
+                                size_t nbits, limb_t *scratch);
+void blst_fp12s_tile_pippenger(blst_fp12 *ret,
+                                const blst_fp12 *const points[],
+                                size_t npoints, const byte *const scalars[],
+                                size_t nbits, limb_t *scratch,
+                                size_t bit0, size_t window);
+
+/*
  * Hash-to-curve operations.
  */
 #ifndef SWIG
